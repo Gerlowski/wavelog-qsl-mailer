@@ -1,0 +1,16 @@
+# systemd unit written by install-linux.sh (shown here for reference)
+[Unit]
+Description=Wavelog QSL mailer
+After=network-online.target mariadb.service mysql.service
+Wants=network-online.target
+
+[Service]
+User=www-data
+WorkingDirectory=/opt/wavelog-qsl-mailer
+Environment=PYTHONPATH=/opt/wavelog-qsl-mailer PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 -m qsl_mailer -c /opt/wavelog-qsl-mailer/config.ini --loop 900
+Restart=on-failure
+RestartSec=60
+
+[Install]
+WantedBy=multi-user.target

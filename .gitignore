@@ -218,3 +218,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# wavelog-qsl-mailer runtime files
+config.ini
+state.sqlite
+state.lock
+preview/
+background.jpg

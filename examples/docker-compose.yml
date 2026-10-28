@@ -1,0 +1,17 @@
+# Add this service to the docker-compose.yml of your Wavelog stack (next to wavelog-db
+# and wavelog-main), or paste it into the stack editor of Portainer / Dockhand.
+#
+# ./qsl-mailer is a folder on the host with your config.ini (copy of config.example.ini).
+# wavelog-config must be the volume Wavelog mounts at /var/www/html/application/config/docker.
+# First deploy with --dry-run in command (logs + preview/ only), then remove it.
+
+  wavelog-qsl-mailer:
+    image: ghcr.io/gerlowski/wavelog-qsl-mailer:latest
+    container_name: wavelog-qsl-mailer
+    command: ["--loop", "900", "--dry-run"]
+    depends_on:
+      - wavelog-db
+    volumes:
+      - ./qsl-mailer:/config
+      - wavelog-config:/wavelog-config:ro
+    restart: unless-stopped
