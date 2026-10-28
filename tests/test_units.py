@@ -141,3 +141,28 @@ def test_plain_mail_with_attachments(tmp_path):
     msg, _ = build_message(cfg, card, [qso()], 'dl1xyz@example.de', 'SP4BL <qsl@sp4bl.pl>')
     names = [p.get_filename() for p in msg.iter_attachments()]
     assert names == ['SP4BL_DL1XYZ_20261028_1952_20m.jpg']
+
+
+def test_fill_does_not_cache_a_miss_when_a_callbook_fails(tmp_path, monkeypatch):
+    from qsl_mailer import callbook, cli
+    from qsl_mailer.state import State
+
+    class Down:
+        name = 'qrz'
+
+        def __init__(self, user, password):
+            pass
+
+        def email(self, call):
+            raise OSError('timed out')
+
+    class Wl:
+        def calls_without_email(self):
+            return ['SQ4MK']
+
+    monkeypatch.setitem(callbook.PROVIDERS, 'qrz', Down)
+    monkeypatch.setattr(cli.time, 'sleep', lambda s: None)
+    cfg = make_cfg(tmp_path, callbook={'order': 'qrz', 'qrz_user': 'u', 'qrz_password': 'p'})
+    state = State(tmp_path / 'state.sqlite')
+    cli.fill(cfg, {'config': {}, 'db': {}}, Wl(), state, dry_run=False)
+    assert state.cached('SQ4MK', 30) is None  # asked again next run, not skipped for 30 days
