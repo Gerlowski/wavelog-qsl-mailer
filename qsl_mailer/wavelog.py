@@ -85,10 +85,11 @@ class Wavelog:
             f"d.name AS country, u.user_firstname AS operator "
             f"FROM station_profile s LEFT JOIN dxcc_entities d ON d.adif = s.station_dxcc "
             f"LEFT JOIN users u ON u.user_id = s.user_id WHERE s.station_id IN ({marks})", ids)
-        stations = {r['station_id']: r for r in rows}
-        missing = set(ids) - set(stations)
+        found = {r['station_id']: r for r in rows}
+        missing = set(ids) - set(found)
         if missing:
             sys.exit(f'[qso] station_ids: no Station Location with ID {", ".join(map(str, sorted(missing)))}')
+        stations = {i: found[i] for i in ids}  # keeps the configured order: the first one is the main station
         for s in stations.values():
             s['country'] = (s['country'] or '').title()
         return stations

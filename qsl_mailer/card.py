@@ -60,8 +60,10 @@ class Card:
             self.design = Image.open(conf.resolve(cfg, design)).convert('RGB')
             self.box = [int(v) for v in conf.csv_list(conf.get(cfg, 'card', 'box', ','.join(map(str, BOX))))]
             self.draw_box = conf.get_bool(cfg, 'card', 'draw_box', False)
-            self.printed_call = (conf.get(cfg, 'card', 'printed_callsign') or '').upper()
-            self.printed_grid = (conf.get(cfg, 'card', 'printed_grid') or '').upper()
+            # what the design shows; by default the first Station Location in station_ids
+            main = next(iter(stations.values()), {}) if stations else {}
+            self.printed_call = (conf.get(cfg, 'card', 'printed_callsign') or main.get('callsign') or '').upper()
+            self.printed_grid = (conf.get(cfg, 'card', 'printed_grid') or main.get('grid') or '').upper()
         else:
             self.mode = 'background' if background else 'generated'
             self.background = self._photo(conf.resolve(cfg, background)) if background else self._sky()

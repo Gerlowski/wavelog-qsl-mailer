@@ -107,6 +107,17 @@ def test_design_card_station_line(tmp_path):
     assert card.station_line(qso()) == ''
     line = card.station_line(qso(station_id=2, station_callsign='SP4BL/P', my_grid='KO13BC', my_pota='PL-1234'))
     assert line == 'FROM SP4BL/P · KO13bc · POTA PL-1234'
+    # without printed_* the first Station Location is what the design shows
+    card = Card(make_cfg(tmp_path, card={'image': 'design.jpg'}), STATIONS)
+    assert card.station_line(qso()) == ''
+    assert card.station_line(qso(station_id=2, station_callsign='SP4BL/P', my_grid='KO13BC')) == 'FROM SP4BL/P · KO13bc'
+
+
+def test_old_site_key(tmp_path):
+    card = Card(make_cfg(tmp_path), STATIONS)
+    cfg = make_cfg(tmp_path, mail={'site': 'https://sp4bl.pl'})
+    msg, _ = build_message(cfg, card, [qso()], 'dl1xyz@example.de', 'SP4BL <qsl@sp4bl.pl>')
+    assert 'https://sp4bl.pl' in msg.get_body(('plain',)).get_content()
 
 
 def test_message_html_and_text(tmp_path):

@@ -135,7 +135,7 @@ def html_page(t, who, mycall, opname, location, links, qsos, cids, from_line, th
 
 def links_for(cfg, mycall):
     links = []
-    site = conf.get(cfg, 'mail', 'website')
+    site = conf.get(cfg, 'mail', 'website') or conf.get(cfg, 'mail', 'site')  # 'site' in older configs
     if site:
         links.append((site.split('://', 1)[-1].rstrip('/'), site))
     if conf.get_bool(cfg, 'mail', 'qrz_link', True):
