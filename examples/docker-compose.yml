@@ -11,6 +11,7 @@
     command: ["--loop", "900", "--dry-run"]
     depends_on:
       - wavelog-db
+      - wavelog-main
     volumes:
       - ./qsl-mailer:/config
       - wavelog-config:/wavelog-config:ro

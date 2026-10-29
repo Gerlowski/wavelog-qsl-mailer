@@ -1,4 +1,5 @@
-"""End-to-end run against a real MariaDB/MySQL with Wavelog's tables and a local SMTP server.
+"""End-to-end run against a real MariaDB/MySQL with Wavelog's tables, a stand-in for Wavelog's API
+on top of it and a local SMTP server.
 
 Runs when MYSQL_HOST is set (CI provides a MariaDB service), e.g.:
   MYSQL_HOST=127.0.0.1 MYSQL_USER=root MYSQL_PASSWORD=root pytest tests/test_integration.py
@@ -6,8 +7,11 @@ Runs when MYSQL_HOST is set (CI provides a MariaDB service), e.g.:
 
 import email
 import email.policy
+import json
 import os
 import socket
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pymysql
 import pytest
@@ -70,8 +74,76 @@ def smtp():
     ctl.stop()
 
 
+API_KEY = 'wlTESTKEY'
+
+
+def db_connect(database):
+    return pymysql.connect(host=os.environ['MYSQL_HOST'], port=int(os.environ.get('MYSQL_PORT', 3306)),
+                           user=os.environ.get('MYSQL_USER', 'root'), password=os.environ.get('MYSQL_PASSWORD', ''),
+                           database=database, charset='utf8mb4', autocommit=True,
+                           cursorclass=pymysql.cursors.DictCursor)
+
+
+class FakeApi(BaseHTTPRequestHandler):
+    """station_info and get_contacts_adif (JSON) answering like Wavelog's API v1."""
+
+    def log_message(self, *args):
+        pass
+
+    def answer(self, code, data):
+        body = json.dumps(data).encode()
+        self.send_response(code)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        if self.path != f'/index.php/api/station_info/{API_KEY}':
+            return self.answer(401, {'status': 'failed', 'reason': 'missing or invalid api key'})
+        with db_connect('qslmailer_test') as db, db.cursor() as c:
+            c.execute("SELECT s.station_id, s.station_profile_name, s.station_gridsquare, s.station_callsign, "
+                      "s.station_city, s.station_pota, s.station_cq, s.station_itu, d.name AS station_country "
+                      "FROM station_profile s LEFT JOIN dxcc_entities d ON d.adif = s.station_dxcc")
+            self.answer(200, [{k: (None if v is None else str(v)) for k, v in r.items()} for r in c.fetchall()])
+
+    def do_POST(self):
+        obj = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+        if self.path != '/index.php/api/get_contacts_adif' or obj.get('key') != API_KEY:
+            return self.answer(401, {'status': 'failed', 'reason': 'missing api key'})
+        assert obj['output_format'] == 'json' and 'EMAIL' in obj['fields']
+        with db_connect('qslmailer_test') as db, db.cursor() as c:
+            # like Wavelog: the MY_* values come from the Station Location
+            c.execute("SELECT q.*, s.station_callsign, s.station_gridsquare, s.station_pota "
+                      "FROM TABLE_HRD_CONTACTS_V01 q JOIN station_profile s ON s.station_id = q.station_id "
+                      "WHERE q.station_id = %s AND q.COL_PRIMARY_KEY > %s ORDER BY q.COL_PRIMARY_KEY LIMIT %s",
+                      (obj['station_id'], obj['fetchfromid'], obj['limit']))
+            rows = c.fetchall()
+        if not rows:
+            return self.answer(200, {'status': 'successful', 'message': 'No new QSOs available.',
+                                     'lastfetchedid': obj['fetchfromid'], 'exported_qsos': 0, 'adif': None})
+        qsos = [{'CALL': r['COL_CALL'], 'EMAIL': r['COL_EMAIL'], 'QSO_DATE': f"{r['COL_TIME_ON']:%Y%m%d}",
+                 'TIME_ON': f"{r['COL_TIME_ON']:%H%M%S}", 'BAND': r['COL_BAND'], 'MODE': r['COL_MODE'],
+                 'SUBMODE': r['COL_SUBMODE'], 'FREQ': r['COL_FREQ'] / 1000000 if r['COL_FREQ'] else None,
+                 'RST_SENT': r['COL_RST_SENT'], 'PROP_MODE': r['COL_PROP_MODE'], 'SAT_NAME': r['COL_SAT_NAME'],
+                 'NAME': r['COL_NAME'], 'STATION_CALLSIGN': r['station_callsign'],
+                 'MY_GRIDSQUARE': r['station_gridsquare'], 'MY_POTA_REF': r['station_pota'],
+                 'MY_WWFF_REF': None, 'MY_SOTA_REF': None} for r in rows]
+        self.answer(200, {'status': 'successful', 'message': 'Export successful',
+                          'lastfetchedid': max(r['COL_PRIMARY_KEY'] for r in rows),
+                          'exported_records': len(qsos), 'qsos': qsos})
+
+
 @pytest.fixture
-def wavelog(tmp_path, smtp, monkeypatch):
+def api():
+    server = ThreadingHTTPServer(('127.0.0.1', 0), FakeApi)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield f'http://127.0.0.1:{server.server_address[1]}/index.php'
+    server.shutdown()
+
+
+@pytest.fixture
+def wavelog(tmp_path, smtp, api, monkeypatch):
     ctl, _ = smtp
     root = pymysql.connect(host=os.environ['MYSQL_HOST'], port=int(os.environ.get('MYSQL_PORT', 3306)),
                            user=os.environ.get('MYSQL_USER', 'root'), password=os.environ.get('MYSQL_PASSWORD', ''),
@@ -90,7 +162,7 @@ def wavelog(tmp_path, smtp, monkeypatch):
         f"\t'username' => '{os.environ.get('MYSQL_USER', 'root')}',\n"
         f"\t'password' => '{os.environ.get('MYSQL_PASSWORD', '')}',\n\t'database' => 'qslmailer_test',\n);\n")
     (tmp_path / 'config.ini').write_text(
-        f"[wavelog]\nconfig_dir = {cfgdir}\n[qso]\nstation_ids = 1,2\nsince = 2026-01-01\n"
+        f"[wavelog]\nconfig_dir = {cfgdir}\napi_url = {api}\napi_key = {API_KEY}\n[qso]\nstation_ids = 1,2\nsince = 2026-01-01\n"
         "[mail]\ndelay_seconds = 0\n")
 
     class FakeQRZ:

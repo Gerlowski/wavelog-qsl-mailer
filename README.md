@@ -24,9 +24,10 @@ so Wavelog updates do not affect it.
 - **Zero-config card.** Your callsign, operator name, grid, QTH, country and CQ/ITU zones come
   from your Station Location in Wavelog. Three colour themes. Or use your own photo, or your own
   finished card design.
-- **Uses Wavelog's own settings:** database, QRZ.com/HamQTH login, SMTP server and sender address.
-- **Several Station Locations** (home, /P, a second call): each QSO gets the card of the station
-  it was made from, including the grid and POTA/WWFF/SOTA reference of that QSO.
+- **Reads your log through Wavelog's API** and uses Wavelog's own settings: QRZ.com/HamQTH login,
+  SMTP server and sender address.
+- **Several Station Locations** (home, /P, a park, a second call): each QSO gets the card of the
+  Station Location it was logged with, including its grid and POTA/WWFF/SOTA reference.
 - **One mail per contact.** QSOs with the same station on several bands go into one mail, one card each.
 - **Languages:** English, Polish and German, picked from the contacted station's prefix.
 - **Safe by default:**
@@ -58,6 +59,7 @@ embedded as JPG files, and a plain-text version goes along for clients without H
 ## Requirements
 
 - Wavelog (Docker or a regular Linux / Raspberry Pi install)
+- A Wavelog API key: menu → *API Keys* → create one (read permission is enough)
 - E-mail set up in Wavelog: *Admin → Global Options → Email*, protocol **SMTP**
   (the *Send Test Mail* button there must work)
 - A callbook login in Wavelog's `config.php`. QRZ.com gives e-mail addresses only with an
@@ -70,7 +72,7 @@ embedded as JPG files, and a plain-text version goes along for clients without H
 | Where in Wavelog | Field | Used for | Needed? |
 |---|---|---|---|
 | *Station Setup → Station Locations* | Station Callsign | callsign on the card and in the mail | yes |
-| | Gridsquare | grid on the card | recommended |
+| | Gridsquare, POTA/WWFF/SOTA reference | grid and reference on the card | recommended |
 | | City, DXCC | the line under the callsign (e.g. *Łomża · KO13ae · Poland*) | recommended |
 | | CQ Zone, ITU Zone | zones on the card | optional |
 | *Account* (your user) | First Name | *OP. BARTOSZ* on the card, the sign-off in the mail | recommended |
@@ -79,7 +81,6 @@ embedded as JPG files, and a plain-text version goes along for clients without H
 | each QSO | Date/time, band, mode, frequency, RST sent | the card | yes (logged anyway) |
 | | E-mail | the address the card goes to; filled in from the callbook when empty | — |
 | | Name | *Hello Hans* instead of *Hello DL1XYZ* | optional |
-| | My Gridsquare, My POTA/WWFF/SOTA Ref | grid and reference of that QSO (/P, /M, parks) | optional |
 
 Empty optional fields are left out of the card. Anything can also be overridden in `config.ini`
 (`operator`, `location`).
@@ -95,8 +96,12 @@ Empty optional fields are left out of the card. Anything can also be overridden 
    curl -o qsl-mailer/config.ini https://raw.githubusercontent.com/gerlowski/wavelog-qsl-mailer/main/config.example.ini
    ```
 
-   In `config.ini` set `since` (the first QSO date to send cards for, e.g. today) and
-   `station_ids` (leave it empty for now; the first run lists your Station Locations with their IDs).
+   In `config.ini` set:
+   - `api_key`: in Wavelog open the menu → *API Keys*, create a key (read permission is enough);
+   - `api_url = http://wavelog-main/index.php` (Wavelog as seen from inside the Docker network;
+     use the name of your Wavelog service if it is not `wavelog-main`);
+   - `since`: the first QSO date to send cards for, e.g. today;
+   - `station_ids`: leave it empty for now; the first run lists your Station Locations with their IDs.
 
 2. Add the service to your Wavelog stack ([examples/docker-compose.yml](examples/docker-compose.yml)):
 
@@ -107,6 +112,7 @@ Empty optional fields are left out of the card. Anything can also be overridden 
        command: ["--loop", "900", "--dry-run"]
        depends_on:
          - wavelog-db
+         - wavelog-main
        volumes:
          - ./qsl-mailer:/config
          - wavelog-config:/wavelog-config:ro
@@ -138,6 +144,7 @@ sudo ./install-linux.sh            # or: sudo ./install-linux.sh /path/to/wavelo
 
 The installer:
 - finds Wavelog (`/var/www/html`, `/var/www/wavelog`, …);
+- asks for a Wavelog API key (menu → *API Keys*, read permission is enough);
 - installs the two dependencies from your distribution (`python3-pymysql`, `python3-pil`);
 - copies the program to `/opt/wavelog-qsl-mailer` and lists your Station Locations to choose from;
 - makes a dry run, then sets up a systemd service (`wavelog-qsl-mailer`) running every 15 minutes
@@ -150,7 +157,7 @@ and keeps your config and the record of sent cards.
 
 ```bash
 pip install git+https://github.com/gerlowski/wavelog-qsl-mailer.git
-cp config.example.ini config.ini     # set config_dir, station_ids, since
+cp config.example.ini config.ini     # set config_dir, api_key, station_ids, since
 qsl-mailer -c config.ini --dry-run
 qsl-mailer -c config.ini             # e.g. from cron every 15 minutes
 ```
@@ -190,17 +197,22 @@ In Docker, prefix with `docker exec wavelog-qsl-mailer`.
 
 ## How it works
 
-The mailer reads Wavelog's `config.php` and `database.php` to log in to the database and the
-callbooks, and the `options` table for the SMTP settings. It writes only two things in Wavelog's
-database:
-- the contact's e-mail (`COL_EMAIL`), and only when it is empty;
-- the *QSL sent* fields after a card was mailed (`mark_qsl_sent = false` turns this off).
+The mailer reads your QSOs and Station Locations through Wavelog's API (`get_contacts_adif`,
+`station_info`), with an API key that only needs read permission. The callbook login comes from
+Wavelog's `config.php`.
+
+Wavelog's API cannot change the e-mail or QSL sent fields of a QSO and does not offer the e-mail
+settings, so for these the mailer still uses the database (login from `database.php`):
+- it writes the contact's e-mail (`COL_EMAIL`), and only when it is empty;
+- it writes the *QSL sent* fields after a card was mailed (`mark_qsl_sent = false` turns this off);
+- it reads the SMTP settings (`options` table) and your first name (`users` table).
 
 Which QSOs already got a card is kept in its own `state.sqlite`, so even with `mark_qsl_sent = false`
-nobody gets the same card twice.
+nobody gets the same card twice. A QSO is recognised by Station Location, callsign, date/time and
+band, because the API does not return Wavelog's QSO ID.
 
-Why not Wavelog's REST API? At the moment the API does not expose the e-mail field of a QSO, so
-the mailer talks to the database, read-only except for the two fields above.
+**Updating from 1.1:** add `api_key` (and in Docker `api_url`) to `[wavelog]` in `config.ini`.
+The record of sent cards is carried over on the first run.
 
 ## FAQ
 
@@ -211,9 +223,8 @@ the mailer talks to the database, read-only except for the two fields above.
 
 **I want to add another station (SP4BL/M, a second call).** Create a Station Location for it in
 Wavelog and add its ID to `station_ids` in `config.ini` (leave it empty once to see the list of IDs).
-No restart needed. Each QSO gets the card of the station it was made from, with the call, grid and
-POTA/WWFF/SOTA reference from the QSO itself, so log *My Gridsquare* when you are mobile. The city of
-that Station Location is shown under the callsign; for /M use something like "Mobile".
+No restart needed. Each QSO gets the card of the Station Location it was logged with: its call, grid,
+POTA/WWFF/SOTA reference and city (for /M use something like "Mobile").
 `qsl-mailer card` writes a sample card for every station to `preview/`.
 
 **Gmail as SMTP server.** Use an [app password](https://myaccount.google.com/apppasswords) in

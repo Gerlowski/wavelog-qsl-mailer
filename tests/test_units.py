@@ -157,7 +157,7 @@ def test_fill_does_not_cache_a_miss_when_a_callbook_fails(tmp_path, monkeypatch)
             raise OSError('timed out')
 
     class Wl:
-        def calls_without_email(self):
+        def calls_without_email(self, state):
             return ['SQ4MK']
 
     monkeypatch.setitem(callbook.PROVIDERS, 'qrz', Down)
@@ -166,3 +166,64 @@ def test_fill_does_not_cache_a_miss_when_a_callbook_fails(tmp_path, monkeypatch)
     state = State(tmp_path / 'state.sqlite')
     cli.fill(cfg, {'config': {}, 'db': {}}, Wl(), state, dry_run=False)
     assert state.cached('SQ4MK', 30) is None  # asked again next run, not skipped for 30 days
+
+
+def api_qso(call, when, **kw):
+    q = {'CALL': call, 'EMAIL': '', 'QSO_DATE': f'{when:%Y%m%d}', 'TIME_ON': f'{when:%H%M%S}', 'BAND': '20M',
+         'MODE': 'SSB', 'SUBMODE': 'USB', 'FREQ': 14.205, 'RST_SENT': '59', 'STATION_CALLSIGN': 'sp4bl',
+         'MY_GRIDSQUARE': 'KO13AE'}
+    q.update(kw)
+    return q
+
+
+def fake_wavelog(pages):
+    """Wavelog with get_contacts_adif answered from {(station_id, fetchfromid): (qsos, lastfetchedid)}."""
+    from qsl_mailer.wavelog import Wavelog
+    wl = Wavelog.__new__(Wavelog)
+    wl.station_ids, wl.since, wl.min_age = [1], dt.datetime(2026, 1, 1), dt.timedelta(minutes=30)
+    wl.calls = []
+
+    def api(endpoint, payload):
+        wl.calls.append(payload['fetchfromid'])
+        qsos, last = pages.get((payload['station_id'], payload['fetchfromid']), ([], payload['fetchfromid']))
+        return {'qsos': qsos, 'lastfetchedid': last} if qsos else {'lastfetchedid': last, 'adif': None}
+
+    wl.api = api
+    return wl
+
+
+def test_api_qso_fields():
+    wl = fake_wavelog({(1, 0): ([api_qso('dl1xyz', dt.datetime(2026, 3, 1, 19, 52, 7), EMAIL='a@b.de')], 7)})
+    q, = wl.fetch()
+    assert q['key'] == '1|DL1XYZ|2026-03-01 19:52:07|20m'
+    assert (q['callsign'], q['email'], q['freq'], q['station_callsign'], q['station_id']) == \
+        ('DL1XYZ', 'a@b.de', 14205000, 'SP4BL', 1)
+
+
+def test_api_read_position_skips_only_old_pages(tmp_path):
+    from qsl_mailer.state import State
+    old, new = dt.datetime(2025, 6, 1), dt.datetime(2026, 2, 1)
+    pages = {(1, 0): ([api_qso('OLD1', old), api_qso('OLD2', old)], 10),
+             (1, 10): ([api_qso('OLD3', old), api_qso('NEW1', new)], 20),
+             (1, 20): ([api_qso('NEW2', new)], 30)}
+    state = State(tmp_path / 'state.sqlite')
+    assert [q['callsign'] for q in fake_wavelog(pages).fetch(state)] == ['OLD1', 'OLD2', 'OLD3', 'NEW1', 'NEW2']
+    assert state.cursor(1, dt.datetime(2026, 1, 1)) == 10  # stops before the page with a new QSO
+    wl = fake_wavelog(pages)
+    assert [q['callsign'] for q in wl.new_qsos(state)] == ['NEW1', 'NEW2']
+    assert wl.calls == [10, 20, 30]
+    assert state.cursor(1, dt.datetime(2025, 1, 1)) == 0  # another start date starts from the beginning
+
+
+def test_state_migrates_sent_qso_ids(tmp_path):
+    import sqlite3
+    from qsl_mailer.state import State
+    path = tmp_path / 'state.sqlite'
+    with sqlite3.connect(path) as db:
+        db.execute('CREATE TABLE sent (qso_id INTEGER PRIMARY KEY, callsign TEXT, email TEXT, sent_at TEXT)')
+        db.executemany('INSERT INTO sent VALUES (?, ?, ?, ?)', [(5, 'DL1XYZ', 'a@b.de', '2026-03-01T20:00:00'),
+                                                                (6, 'GONE', 'g@b.de', '2026-03-01T20:00:00')])
+    state = State(path)
+    assert state.migrate(lambda ids: {5: '1|DL1XYZ|2026-03-01 19:52:07|20m'}) == 1
+    assert state.is_sent('1|DL1XYZ|2026-03-01 19:52:07|20m')
+    assert state.migrate(lambda ids: 1 / 0) == 0  # done once

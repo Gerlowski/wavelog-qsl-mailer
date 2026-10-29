@@ -27,7 +27,7 @@ def fill(cfg, files, wl, state, dry_run):
         return
     retry_days = int(conf.get(cfg, 'callbook', 'retry_days', 30))
     skip = {c.upper() for c in conf.csv_list(conf.get(cfg, 'qso', 'skip_calls'))}
-    calls = [c for c in wl.calls_without_email() if c not in skip]
+    calls = [c for c in wl.calls_without_email(state) if c not in skip]
     log(f'fill: {len(calls)} callsigns without e-mail, callbooks: {", ".join(b.name for b in books)}')
     found = 0
     for callsign in calls:
@@ -68,10 +68,10 @@ def send(cfg, wl, state, dry_run, preview_dir, resend=None):
 
     # one mail per contacted station, e-mail and own callsign, with all its new QSOs
     groups = {}
-    for qso in (wl.qsos_for_call(resend) if resend else wl.qsos_with_email()):
+    for qso in (wl.qsos_for_call(resend) if resend else [q for q in wl.new_qsos(state) if q['email']]):
         email = callbook.clean_email(qso['email'])
         if not email or (not resend and (email in skip_emails or qso['callsign'] in skip_calls
-                                         or state.is_sent(qso['id']))):
+                                         or state.is_sent(qso['key']))):
             continue
         groups.setdefault((qso['callsign'], email, qso['station_callsign']), []).append(qso)
     if not groups:
@@ -114,7 +114,7 @@ def send(cfg, wl, state, dry_run, preview_dir, resend=None):
             state.mark_sent(qsos, email)
             if mark:
                 for qso in qsos:
-                    wl.mark_qsl_sent(qso['id'])
+                    wl.mark_qsl_sent(qso)
             sent += 1
             log(f'send: {callsign} <{email}> {len(qsos)} QSO')
             time.sleep(delay)
@@ -137,7 +137,10 @@ def run(args):
         files = conf.wavelog_files(cfg)
         wl, state = Wavelog(cfg, files), State(state_path)
         try:
-            log(f'run{" (dry run)" if args.dry_run else ""}: database {wl.host}, '
+            migrated = state.migrate(wl.qso_keys)
+            if migrated:
+                log(f'state: {migrated} sent QSOs carried over from version 1.1')
+            log(f'run{" (dry run)" if args.dry_run else ""}: API {wl.api_url}, database {wl.host}, '
                 f'stations {",".join(map(str, wl.station_ids))}, QSOs since {wl.since:%Y-%m-%d}')
             if args.command == 'resend':
                 send(cfg, wl, state, args.dry_run, preview, resend=args.callsign)
@@ -157,7 +160,7 @@ def card_preview(cfg, wl, preview, callsign):
     preview.mkdir(parents=True, exist_ok=True)
     now = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None, second=0, microsecond=0)
     for sid, st in wl.stations.items():
-        qso = {'id': 0, 'callsign': (callsign or 'N0CALL').upper(), 'time_on': now, 'band': '20m', 'mode': 'SSB',
+        qso = {'callsign': (callsign or 'N0CALL').upper(), 'time_on': now, 'band': '20m', 'mode': 'SSB',
                'submode': 'USB', 'freq': 14205000, 'rst_sent': '59', 'station_id': sid,
                'station_callsign': st['callsign'], 'my_grid': st['grid'], 'my_pota': st.get('pota')}
         path = preview / f"sample_{st['callsign'].replace('/', '-')}.jpg"
