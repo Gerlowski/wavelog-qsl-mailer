@@ -120,7 +120,7 @@ Empty optional fields are left out of the card. Anything can also be overridden 
    | Image tag | What it is |
    |---|---|
    | `latest` | the newest release (recommended) |
-   | `1.0`, `1.0.1` | a fixed release, if you want to update by hand |
+   | `1.1`, `1.1.0` | a fixed release, if you want to update by hand |
    | `edge` | the newest code from `main`, not released yet (for testing) |
 
 3. Start it and read the log: `docker logs -f wavelog-qsl-mailer`. With `--dry-run` nothing is sent:
