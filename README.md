@@ -62,6 +62,27 @@ embedded as JPG files, and a plain-text version goes along for clients without H
   (the *Send Test Mail* button there must work)
 - A callbook login in Wavelog's `config.php`. QRZ.com gives e-mail addresses only with an
   **XML Logbook Data subscription**; HamQTH is free. Addresses already in your QSOs are used anyway.
+- A Station Location with your callsign. Grid, city and your first name make the card nicer;
+  see [what the mailer reads from Wavelog](#what-the-mailer-reads-from-wavelog).
+
+### What the mailer reads from Wavelog
+
+| Where in Wavelog | Field | Used for | Needed? |
+|---|---|---|---|
+| *Station Setup → Station Locations* | Station Callsign | callsign on the card and in the mail | yes |
+| | Gridsquare | grid on the card | recommended |
+| | City, DXCC | the line under the callsign (e.g. *Łomża · KO13ae · Poland*) | recommended |
+| | CQ Zone, ITU Zone | zones on the card | optional |
+| *Account* (your user) | First Name | *OP. BARTOSZ* on the card, the sign-off in the mail | recommended |
+| *Admin → Global Options → Email* | SMTP server, sender address | sending the mail | yes |
+| `config.php` | QRZ.com or HamQTH login | finding e-mail addresses | recommended |
+| each QSO | Date/time, band, mode, frequency, RST sent | the card | yes (logged anyway) |
+| | E-mail | the address the card goes to; filled in from the callbook when empty | — |
+| | Name | *Hello Hans* instead of *Hello DL1XYZ* | optional |
+| | My Gridsquare, My POTA/WWFF/SOTA Ref | grid and reference of that QSO (/P, /M, parks) | optional |
+
+Empty optional fields are left out of the card. Anything can also be overridden in `config.ini`
+(`operator`, `location`).
 
 ## Installation
 
@@ -181,25 +202,6 @@ the mailer talks to the database, read-only except for the two fields above.
 
 **Someone asked not to receive cards.** Add the callsign to `skip_calls` (or the address to
 `skip_emails`) in `config.ini`. No restart needed.
-
-**Which fields in Wavelog do I need to fill in?**
-
-| Where in Wavelog | Field | Used for | Needed? |
-|---|---|---|---|
-| *Station Setup → Station Locations* | Station Callsign | callsign on the card and in the mail | yes |
-| | Gridsquare | grid on the card | recommended |
-| | City, DXCC | the line under the callsign (e.g. *Łomża · KO13ae · Poland*) | recommended |
-| | CQ Zone, ITU Zone | zones on the card | optional |
-| *Account* (your user) | First Name | *OP. BARTOSZ* on the card, the sign-off in the mail | recommended |
-| *Admin → Global Options → Email* | SMTP server, sender address | sending the mail | yes |
-| `config.php` | QRZ.com or HamQTH login | finding e-mail addresses | recommended |
-| each QSO | Date/time, band, mode, frequency, RST sent | the card | yes (logged anyway) |
-| | E-mail | the address the card goes to; filled in from the callbook when empty | — |
-| | Name | *Hello Hans* instead of *Hello DL1XYZ* | optional |
-| | My Gridsquare, My POTA/WWFF/SOTA Ref | grid and reference of that QSO (/P, /M, parks) | optional |
-
-Empty optional fields are left out of the card. Anything can also be overridden in `config.ini`
-(`operator`, `location`).
 
 **I want to add another station (SP4BL/M, a second call).** Create a Station Location for it in
 Wavelog and add its ID to `station_ids` in `config.ini` (leave it empty once to see the list of IDs).
