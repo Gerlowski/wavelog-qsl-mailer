@@ -173,6 +173,14 @@ Translations are welcome as pull requests (`qsl_mailer/mail.py`).
 mailbox, with an opt-out line in every mail. Keep `max_per_run` modest, and you are
 fine with any normal mail provider.
 
+## Questions and feedback
+
+- **Questions, setup help:** [Discussions → Q&A](https://github.com/Gerlowski/wavelog-qsl-mailer/discussions/categories/q-a)
+- **Ideas and feature requests:** [Discussions → Ideas](https://github.com/Gerlowski/wavelog-qsl-mailer/discussions/categories/ideas)
+- **Show your card:** [Discussions → Show and tell](https://github.com/Gerlowski/wavelog-qsl-mailer/discussions/categories/show-and-tell)
+- **Something broken:** [open an issue](https://github.com/Gerlowski/wavelog-qsl-mailer/issues) with the log
+  output (`--dry-run` is fine) and your Wavelog version; leave out passwords.
+
 ## Development
 
 ```bash

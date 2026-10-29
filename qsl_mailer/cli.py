@@ -33,13 +33,14 @@ def fill(cfg, files, wl, state, dry_run):
     for callsign in calls:
         email = state.cached(callsign, retry_days)
         if email is None:
-            email, source = '', ''
+            email, source, failed = '', '', False
             for variant in callbook.lookup_variants(callsign):
                 for book in books:
                     try:
                         email = callbook.clean_email(book.email(variant))
                     except Exception as e:  # one callbook down: try the next one
                         log(f'fill: {book.name} {variant}: {e}')
+                        failed = True
                         continue
                     if email:
                         source = book.name
@@ -47,7 +48,7 @@ def fill(cfg, files, wl, state, dry_run):
                 if email:
                     break
                 time.sleep(0.5)
-            if not dry_run:
+            if not dry_run and (email or not failed):  # a miss counts only if every callbook answered
                 state.remember(callsign, email, source)
         if email:
             found += 1
