@@ -21,6 +21,7 @@ PREFIX_LANG = {
 TEXT = {
     'en': {
         'subject': '{mycall} – QSL card for our QSO, {callsign}',
+        'header': 'QSO CONFIRMATION',
         'hello': 'Hello {who},',
         'thanks': 'Thank you for the QSO! Here is my QSL card confirming our contact.',
         'thanks_many': 'Thank you for the QSOs! Here are my QSL cards confirming our contacts.',
@@ -30,6 +31,7 @@ TEXT = {
     },
     'pl': {
         'subject': '{mycall} – karta QSL za QSO z {callsign}',
+        'header': 'POTWIERDZENIE QSO',
         'hello': 'Cześć {who},',
         'thanks': 'Dziękuję za łączność! Poniżej moja karta QSL potwierdzająca QSO.',
         'thanks_many': 'Dziękuję za łączności! Poniżej moje karty QSL potwierdzające QSO.',
@@ -39,6 +41,7 @@ TEXT = {
     },
     'de': {
         'subject': '{mycall} – QSL-Karte für unser QSO, {callsign}',
+        'header': 'QSO-BESTÄTIGUNG',
         'hello': 'Hallo {who},',
         'thanks': 'Vielen Dank für das QSO! Hier ist meine QSL-Karte als Bestätigung unserer Verbindung.',
         'thanks_many': 'Vielen Dank für die QSOs! Hier sind meine QSL-Karten als Bestätigung unserer Verbindungen.',
@@ -98,8 +101,16 @@ def html_page(t, who, mycall, opname, location, links, qsos, cids, from_line, th
     links_html = ' &nbsp;·&nbsp; '.join(
         f'<a href="{e(url)}" style="color:#ffcf6e;text-decoration:none;font-weight:600;">{e(label)}</a>'
         for label, url in links)
-    top, mid, bottom = theme
+    top, _, bottom = theme
     font = "Montserrat,'Segoe UI',Helvetica,Arial,sans-serif"
+    first = qsos[0]
+    if len(qsos) == 1:
+        qso_info = [f'{first["time_on"]:%Y-%m-%d · %H:%M} UTC', (first.get('band') or '').lower(),
+                    first.get('submode') or first.get('mode') or '']
+    else:
+        bands = dict.fromkeys((q.get('band') or '').lower() for q in qsos)
+        qso_info = [f'{len(qsos)} QSO', f'{first["time_on"]:%Y-%m-%d}', *bands]
+    qso_info = ' · '.join(e(p) for p in qso_info if p)
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light only"><title>QSL {e(mycall)}</title></head>
@@ -107,10 +118,11 @@ def html_page(t, who, mycall, opname, location, links, qsos, cids, from_line, th
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#0e1636;">
 <tr><td align="center" style="padding:24px 12px;">
 <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;font-family:{font};">
-  <tr><td style="background:{top};background-image:linear-gradient(120deg,{top} 0%,{mid} 60%,{bottom} 100%);border-radius:14px 14px 0 0;padding:26px 24px;">
-    <div style="font-size:12px;letter-spacing:3px;color:#ffcf6e;font-weight:700;">QSL</div>
-    <div style="font-size:36px;line-height:1.1;color:#ffffff;font-weight:800;letter-spacing:1px;margin-top:4px;">{e(mycall)}</div>
-    <div style="font-size:14px;color:#f3e2a8;margin-top:6px;">{e(location)}</div>
+  <tr><td style="background:{top};border-bottom:3px solid {bottom};border-radius:14px 14px 0 0;padding:24px;">
+    <div style="font-size:12px;letter-spacing:3px;color:#c9c2e0;font-weight:700;">{e(t['header'])}</div>
+    <div style="font-size:32px;line-height:1.15;color:#ffffff;font-weight:800;letter-spacing:1px;margin-top:6px;">{e(mycall)} <span style="color:#ffcf6e;font-weight:400;">&#8644;</span> {e(first['callsign'])}</div>
+    <div style="font-size:14px;color:#e6e0f5;margin-top:8px;">{qso_info}</div>
+    <div style="font-size:13px;color:#c9c2e0;margin-top:4px;">{e(location)}</div>
   </td></tr>
   <tr><td style="background:#ffffff;padding:26px 24px 8px;">
     <p style="margin:0 0 8px;font-size:22px;color:#16122b;font-weight:700;">{e(t['hello'].format(who=who))}</p>

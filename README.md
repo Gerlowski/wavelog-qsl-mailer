@@ -1,5 +1,7 @@
 # Wavelog QSL Mailer
 
+[![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/sp4bl)
+
 Send QSL cards by e-mail from your self-hosted [Wavelog](https://github.com/wavelog/wavelog).
 
 For every new QSO in your log it:
@@ -33,6 +35,25 @@ so Wavelog updates do not affect it.
   - a limit of mails per run and an opt-out list;
   - every QSO gets its card only once.
 - **Dry run** shows who would get which card, with previews of the cards and the mail, without sending anything.
+
+## Screenshots
+
+### Mails
+
+| Two QSOs, one mail (English) | One QSO (Polish) | Theme `ocean` (German) |
+|---|---|---|
+| ![Mail with two QSOs](docs/mail.jpg) | ![Mail in Polish](docs/mail-pl.jpg) | ![Mail with the ocean theme](docs/mail-ocean.jpg) |
+
+The header and the card follow the `theme` set in `[card]`. The mail is plain HTML with tables and
+inline styles, so it looks the same in Gmail, Outlook, Apple Mail and Thunderbird. The cards are
+embedded as JPG files, and a plain-text version goes along for clients without HTML
+(`html = false` sends only the plain text with the cards attached).
+
+### Card themes
+
+| `dusk` | `ocean` | `forest` |
+|---|---|---|
+| ![dusk](docs/card-dusk.jpg) | ![ocean](docs/card-ocean.jpg) | ![forest](docs/card-forest.jpg) |
 
 ## Requirements
 
@@ -180,6 +201,7 @@ fine with any normal mail provider.
 - **Show your card:** [Discussions → Show and tell](https://github.com/Gerlowski/wavelog-qsl-mailer/discussions/categories/show-and-tell)
 - **Something broken:** [open an issue](https://github.com/Gerlowski/wavelog-qsl-mailer/issues) with the log
   output (`--dry-run` is fine) and your Wavelog version; leave out passwords.
+- **Like it?** [Buy me a coffee](https://buymeacoffee.com/sp4bl). 73 de SP4BL!
 
 ## Development
 
