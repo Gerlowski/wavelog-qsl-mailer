@@ -117,6 +117,12 @@ Empty optional fields are left out of the card. Anything can also be overridden 
    `/var/www/html/application/config/docker` (the name used by the official compose file).
    The image runs on amd64, arm64 and armv7 (Raspberry Pi).
 
+   | Image tag | What it is |
+   |---|---|
+   | `latest` | the newest release (recommended) |
+   | `1.0`, `1.0.1` | a fixed release, if you want to update by hand |
+   | `edge` | the newest code from `main`, not released yet (for testing) |
+
 3. Start it and read the log: `docker logs -f wavelog-qsl-mailer`. With `--dry-run` nothing is sent:
    the log shows who would get a card, and `qsl-mailer/preview/` has the cards and the mails as HTML.
 4. When it looks right, remove `"--dry-run"` from `command` and redeploy.
@@ -238,6 +244,13 @@ pip install -e ".[test]"
 pytest                                   # unit tests
 MYSQL_HOST=127.0.0.1 MYSQL_USER=root MYSQL_PASSWORD=root pytest   # plus the end-to-end test
 ```
+
+Changes go to `main` through pull requests. Every push to `main` builds the `edge` image; to get an
+image of another branch, run the *Docker image* workflow on it (*Actions → Docker image →
+Run workflow*), which publishes it under the branch name.
+
+A release: set `__version__` in `qsl_mailer/__init__.py`, merge, then create a release with the tag
+`v<version>` (*Releases → Draft a new release*). The tag builds `latest` and the version images.
 
 ## License
 
