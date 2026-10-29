@@ -5,30 +5,27 @@ on:
   pull_request:
 
 jobs:
+  # Official Python images: setup-python has no 3.9 for Ubuntu 26.04
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
+    container: python:${{ matrix.python }}-slim
     strategy:
       matrix:
-        python: ["3.9", "3.12"]
+        python: ["3.9", "3.12", "3.14"]  # 3.9 = Raspberry Pi OS bullseye, the oldest we support
     services:
       mariadb:
         image: mariadb:11
         env:
           MARIADB_ROOT_PASSWORD: root
-        ports:
-          - 3306:3306
         options: >-
           --health-cmd="healthcheck.sh --connect --innodb_initialized"
           --health-interval=5s --health-timeout=5s --health-retries=20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python }}
+      - uses: actions/checkout@v7
       - run: pip install -e ".[test]"
       - run: pytest -v
         env:
-          MYSQL_HOST: 127.0.0.1
+          MYSQL_HOST: mariadb
           MYSQL_USER: root
           MYSQL_PASSWORD: root
       - run: bash -n install-linux.sh
@@ -36,10 +33,10 @@ jobs:
   # Debian / Raspberry Pi OS packages (older Pillow and PyMySQL), as used by the Docker image
   # and install-linux.sh
   debian-packages:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     container: debian:bookworm-slim
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: apt-get update && apt-get install -y --no-install-recommends python3 python3-pil python3-pymysql python3-pytest
       - run: python3 -m pytest -v tests/test_units.py
       - run: PYTHONPATH=. python3 -m qsl_mailer --version
