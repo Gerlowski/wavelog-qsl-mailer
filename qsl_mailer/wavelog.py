@@ -1,20 +1,26 @@
-"""Read access to the Wavelog database (plus the two writes: contact e-mail and QSL sent)."""
+"""Wavelog access: QSOs and Station Locations through Wavelog's API.
+
+The API has no way to change an existing QSO and does not expose the e-mail settings or the
+user's name, so these few things still go to the database: the contact e-mail, QSL sent,
+Admin -> Global Options -> Email and the operator's first name.
+"""
 
 import datetime as dt
+import json
 import re
 import sys
+import urllib.error
+import urllib.parse
+import urllib.request
 
 import pymysql
 
-from . import config as conf
+from . import __version__, config as conf
 
-QSO_COLUMNS = (
-    "COL_PRIMARY_KEY AS id, UPPER(COL_CALL) AS callsign, COL_EMAIL AS email, COL_TIME_ON AS time_on, "
-    "COL_BAND AS band, COL_MODE AS mode, COL_SUBMODE AS submode, COL_FREQ AS freq, "
-    "COL_RST_SENT AS rst_sent, COL_PROP_MODE AS prop_mode, COL_SAT_NAME AS sat_name, COL_NAME AS name, "
-    "UPPER(COL_STATION_CALLSIGN) AS station_callsign, COL_MY_GRIDSQUARE AS my_grid, "
-    "COL_MY_POTA_REF AS my_pota, COL_MY_WWFF_REF AS my_wwff, COL_MY_SOTA_REF AS my_sota, station_id"
-)
+# Asked from get_contacts_adif; Wavelog merges rows that are equal in all of them (true duplicates)
+API_FIELDS = ['CALL', 'EMAIL', 'QSO_DATE', 'TIME_ON', 'BAND', 'MODE', 'SUBMODE', 'FREQ', 'RST_SENT', 'PROP_MODE',
+              'SAT_NAME', 'NAME', 'STATION_CALLSIGN', 'MY_GRIDSQUARE', 'MY_POTA_REF', 'MY_WWFF_REF', 'MY_SOTA_REF']
+API_PAGE = 1000
 
 MAIL_OPTIONS = ['emailProtocol', 'smtpEncryption', 'smtpHost', 'smtpPort',
                 'smtpUsername', 'smtpPassword', 'emailAddress', 'emailSenderName']
@@ -24,8 +30,28 @@ def utcnow():
     return dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)  # Wavelog stores naive UTC
 
 
+def qso_key(station_id, callsign, time_on, band):
+    """Identifies a QSO: the API does not return Wavelog's QSO ID."""
+    return f'{station_id}|{(callsign or "").upper()}|{time_on:%Y-%m-%d %H:%M:%S}|{(band or "").lower()}'
+
+
+def api_url(cfg, files):
+    """[wavelog] api_url, else Wavelog's base_url from config.php (the "API URL" on Wavelog's API page)."""
+    url = conf.get(cfg, 'wavelog', 'api_url')
+    if not url and files['config'].get('base_url'):
+        url = files['config']['base_url'].rstrip('/') + '/index.php'
+    return (url or '').rstrip('/')
+
+
 class Wavelog:
     def __init__(self, cfg, files):
+        self.api_url = api_url(cfg, files)
+        if not self.api_url:
+            sys.exit('[wavelog] api_url: set the API URL shown in Wavelog (menu -> API Keys)')
+        self.api_key = conf.get(cfg, 'wavelog', 'api_key')
+        if not self.api_key:
+            sys.exit('[wavelog] api_key: create a read-only API key in Wavelog (menu -> API Keys) and set it here')
+
         wdb = files['db']
         host = conf.get(cfg, 'database', 'host', wdb.get('hostname') or 'localhost')
         port = conf.get(cfg, 'database', 'port', wdb.get('port') or 3306)
@@ -50,7 +76,7 @@ class Wavelog:
         if not self.station_ids:
             listing = '\n'.join(f"  {s['station_id']:>4}  {s['callsign']:<12} {s['name']}" for s in self.all_stations())
             sys.exit('[qso] station_ids: set the IDs of your Station Locations (comma separated).\n'
-                     'Station Locations in this Wavelog:\n' + listing)
+                     'Station Locations of this API key:\n' + listing)
         since = conf.get(cfg, 'qso', 'since')
         if not since:
             sys.exit('[qso] since: set the first QSO date (UTC) to send cards for, e.g. 2026-01-01')
@@ -70,65 +96,132 @@ class Wavelog:
         with self.conn.cursor() as c:
             return c.execute(sql, args)
 
+    def api(self, endpoint, payload=None):
+        """GET (no payload) or POST JSON (payload plus the key) to Wavelog's API."""
+        data = None if payload is None else json.dumps({'key': self.api_key, **payload}).encode()
+        req = urllib.request.Request(f'{self.api_url}/api/{endpoint}', data=data, headers={
+            'Content-Type': 'application/json', 'Accept': 'application/json',
+            'User-Agent': f'wavelog-qsl-mailer/{__version__}'})
+        name = endpoint.split('/')[0]
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                body = r.read()
+        except urllib.error.HTTPError as e:
+            try:
+                reason = json.loads(e.read()).get('reason') or ''
+            except ValueError:
+                reason = ''
+            raise RuntimeError(f'Wavelog API {name}: HTTP {e.code} {reason}'.rstrip()) from None
+        try:
+            return json.loads(body)
+        except ValueError:
+            raise RuntimeError(f'Wavelog API {name}: no JSON answer, check [wavelog] api_url ({self.api_url})') from None
+
     # --- stations ---
 
     def all_stations(self):
-        return self.query("SELECT station_id, station_profile_name AS name, UPPER(station_callsign) AS callsign "
-                          "FROM station_profile ORDER BY station_id")
+        rows = self.api('station_info/' + urllib.parse.quote(self.api_key, safe=''))
+        return [{'station_id': int(r['station_id']), 'name': r.get('station_profile_name') or '',
+                 'callsign': (r.get('station_callsign') or '').upper(), 'row': r} for r in rows]
 
     def load_stations(self, ids):
         """Station Location details used on the card and in the mail, keyed by station_id."""
-        marks = ','.join(['%s'] * len(ids))
-        rows = self.query(
-            f"SELECT s.station_id, UPPER(s.station_callsign) AS callsign, s.station_gridsquare AS grid, "
-            f"s.station_city AS city, s.station_cq AS cq, s.station_itu AS itu, s.station_pota AS pota, "
-            f"d.name AS country, u.user_firstname AS operator "
-            f"FROM station_profile s LEFT JOIN dxcc_entities d ON d.adif = s.station_dxcc "
-            f"LEFT JOIN users u ON u.user_id = s.user_id WHERE s.station_id IN ({marks})", ids)
-        found = {r['station_id']: r for r in rows}
+        found = {s['station_id']: s['row'] for s in self.all_stations()}
         missing = set(ids) - set(found)
         if missing:
-            sys.exit(f'[qso] station_ids: no Station Location with ID {", ".join(map(str, sorted(missing)))}')
-        stations = {i: found[i] for i in ids}  # keeps the configured order: the first one is the main station
-        for s in stations.values():
-            s['country'] = (s['country'] or '').title()
+            sys.exit(f'[qso] station_ids: no Station Location with ID {", ".join(map(str, sorted(missing)))} '
+                     f'for this API key')
+        names = self.operator_names(ids)
+        stations = {}  # keeps the configured order: the first one is the main station
+        for i in ids:
+            r = found[i]
+            stations[i] = {'station_id': i, 'callsign': (r.get('station_callsign') or '').upper(),
+                           'grid': r.get('station_gridsquare') or '', 'city': r.get('station_city') or '',
+                           'cq': r.get('station_cq'), 'itu': r.get('station_itu'), 'pota': r.get('station_pota'),
+                           'country': (r.get('station_country') or '').title(), 'operator': names.get(i)}
         return stations
+
+    def operator_names(self, ids):
+        """First name of the Wavelog user owning each Station Location (not in the API)."""
+        marks = ','.join(['%s'] * len(ids))
+        rows = self.query(f"SELECT s.station_id, u.user_firstname AS name FROM station_profile s "
+                          f"JOIN users u ON u.user_id = s.user_id WHERE s.station_id IN ({marks})", ids)
+        return {r['station_id']: r['name'] for r in rows}
 
     # --- QSOs ---
 
-    def _where(self):
-        marks = ','.join(['%s'] * len(self.station_ids))
-        return (f'station_id IN ({marks}) AND COL_TIME_ON >= %s AND COL_TIME_ON <= %s',
-                [*self.station_ids, self.since, utcnow() - self.min_age])
+    @staticmethod
+    def _qso(station_id, q):
+        time_on = dt.datetime.strptime(q['QSO_DATE'] + q['TIME_ON'], '%Y%m%d%H%M%S')
+        freq = q.get('FREQ')
+        return {'key': qso_key(station_id, q.get('CALL'), time_on, q.get('BAND')),
+                'callsign': (q.get('CALL') or '').upper(), 'email': q.get('EMAIL') or '', 'time_on': time_on,
+                'band': q.get('BAND') or '', 'mode': q.get('MODE'), 'submode': q.get('SUBMODE'),
+                'freq': round(float(freq) * 1e6) if freq else None, 'rst_sent': q.get('RST_SENT'),
+                'prop_mode': q.get('PROP_MODE'), 'sat_name': q.get('SAT_NAME'), 'name': q.get('NAME'),
+                'station_callsign': (q.get('STATION_CALLSIGN') or '').upper(), 'my_grid': q.get('MY_GRIDSQUARE'),
+                'my_pota': q.get('MY_POTA_REF'), 'my_wwff': q.get('MY_WWFF_REF'), 'my_sota': q.get('MY_SOTA_REF'),
+                'station_id': station_id}
 
-    def calls_without_email(self):
-        where, args = self._where()
-        rows = self.query(f"SELECT DISTINCT UPPER(COL_CALL) AS callsign FROM {self.table} "
-                          f"WHERE {where} AND (COL_EMAIL IS NULL OR COL_EMAIL = '')", args)
-        return [r['callsign'] for r in rows if r['callsign']]
+    def fetch(self, state=None):
+        """QSOs of the configured Station Locations, in log order. With state: only from the stored
+        position on, which moves past pages of QSOs before `since` (they never need a card)."""
+        out = []
+        for sid in self.station_ids:
+            last = state.cursor(sid, self.since) if state else 0
+            moving = state is not None
+            while True:
+                r = self.api('get_contacts_adif', {'station_id': sid, 'fetchfromid': last, 'limit': API_PAGE,
+                                                   'output_format': 'json', 'fields': API_FIELDS})
+                page = [self._qso(sid, q) for q in r.get('qsos') or []]
+                new_last = int(r.get('lastfetchedid') or last)
+                if new_last <= last:
+                    break
+                moving = moving and all(q['time_on'] < self.since for q in page)
+                if moving:
+                    state.set_cursor(sid, self.since, new_last)
+                out += page
+                last = new_last
+        return out
+
+    def new_qsos(self, state):
+        """QSOs on or after `since` and older than min_age."""
+        until = utcnow() - self.min_age
+        return [q for q in self.fetch(state) if self.since <= q['time_on'] <= until]
+
+    def calls_without_email(self, state):
+        return sorted({q['callsign'] for q in self.new_qsos(state) if q['callsign'] and not q['email']})
 
     def set_email(self, callsign, email):
-        where, args = self._where()
-        return self.execute(f"UPDATE {self.table} SET COL_EMAIL = %s WHERE {where} "
+        marks = ','.join(['%s'] * len(self.station_ids))
+        return self.execute(f"UPDATE {self.table} SET COL_EMAIL = %s WHERE station_id IN ({marks}) "
+                            f"AND COL_TIME_ON >= %s AND COL_TIME_ON <= %s "
                             f"AND UPPER(COL_CALL) = %s AND (COL_EMAIL IS NULL OR COL_EMAIL = '')",
-                            [email, *args, callsign])
-
-    def qsos_with_email(self):
-        where, args = self._where()
-        return self.query(f"SELECT {QSO_COLUMNS} FROM {self.table} WHERE {where} "
-                          f"AND COL_EMAIL IS NOT NULL AND COL_EMAIL <> '' ORDER BY COL_TIME_ON", args)
+                            [email, *self.station_ids, self.since, utcnow() - self.min_age, callsign])
 
     def qsos_for_call(self, callsign):
         """All QSOs with this callsign and an e-mail, ignoring the date window (manual resend)."""
-        marks = ','.join(['%s'] * len(self.station_ids))
-        return self.query(f"SELECT {QSO_COLUMNS} FROM {self.table} WHERE station_id IN ({marks}) "
-                          f"AND UPPER(COL_CALL) = %s AND COL_EMAIL IS NOT NULL AND COL_EMAIL <> '' "
-                          f"ORDER BY COL_TIME_ON", [*self.station_ids, callsign.upper()])
+        return [q for q in self.fetch() if q['callsign'] == callsign.upper() and q['email']]
 
-    def mark_qsl_sent(self, qso_id):
+    def mark_qsl_sent(self, qso):
         self.execute(f"UPDATE {self.table} SET COL_QSL_SENT = 'Y', COL_QSL_SENT_VIA = 'E', COL_QSLSDATE = %s "
-                     f"WHERE COL_PRIMARY_KEY = %s AND (COL_QSL_SENT IS NULL OR COL_QSL_SENT <> 'Y')",
-                     [utcnow().replace(microsecond=0), qso_id])
+                     f"WHERE station_id = %s AND UPPER(COL_CALL) = %s AND COL_TIME_ON = %s AND COL_BAND = %s "
+                     f"AND (COL_QSL_SENT IS NULL OR COL_QSL_SENT <> 'Y')",
+                     [utcnow().replace(microsecond=0), qso['station_id'], qso['callsign'], qso['time_on'],
+                      qso['band']])
+
+    def qso_keys(self, ids):
+        """{QSO ID: qso_key} for state files written before the API was used."""
+        out = {}
+        for i in range(0, len(ids), 500):
+            chunk = ids[i:i + 500]
+            marks = ','.join(['%s'] * len(chunk))
+            for r in self.query(f"SELECT COL_PRIMARY_KEY AS id, station_id, COL_CALL AS callsign, "
+                                f"COL_TIME_ON AS time_on, COL_BAND AS band FROM {self.table} "
+                                f"WHERE COL_PRIMARY_KEY IN ({marks})", chunk):
+                if r['time_on']:
+                    out[r['id']] = qso_key(r['station_id'], r['callsign'], r['time_on'], r['band'])
+        return out
 
     def options(self, names):
         """Wavelog Admin -> Global Options values (e.g. the e-mail/SMTP settings)."""

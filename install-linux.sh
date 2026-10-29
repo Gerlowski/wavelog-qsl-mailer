@@ -48,13 +48,20 @@ if [ ! -f config.ini ]; then
   sed -i "s#^config_dir = .*#config_dir = $CONFIG_DIR#" config.ini
   sed -i "s/^since =.*/since = $(date -u +%F)/" config.ini
 fi
+if ! grep -qE '^api_key *= *[^ ]' config.ini; then
+  grep -q '^api_key' config.ini || sed -i '/^config_dir = /a api_key =\napi_url =' config.ini  # config.ini from 1.1
+  echo "The mailer reads your QSOs through Wavelog's API. In Wavelog open the menu -> API Keys,"
+  echo "create a key (read permission is enough) and paste it here."
+  read -rp "Wavelog API key: " KEY
+  sed -i "s#^api_key =.*#api_key = ${KEY// /}#" config.ini
+fi
 chown -R "$RUNAS" "$DEST"
 chmod 600 config.ini
 
 run() { runuser -u "$RUNAS" -- env PYTHONPATH="$DEST" python3 -m qsl_mailer -c "$DEST/config.ini" "$@"; }
 
 if ! grep -qE '^station_ids *= *[0-9]' config.ini; then
-  run --dry-run 2>&1 | sed -n '/Station Locations in this Wavelog/,$p' || true
+  run --dry-run 2>&1 | sed -n '/Station Locations of this API key/,$p' || true
   read -rp "Station Location IDs to send cards for (comma separated): " IDS
   sed -i "s/^station_ids =.*/station_ids = ${IDS// /}/" config.ini
   echo "Cards will be sent for QSOs since $(grep '^since' config.ini | cut -d= -f2 | xargs) (UTC). Change 'since' in $DEST/config.ini if needed."
