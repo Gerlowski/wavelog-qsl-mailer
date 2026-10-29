@@ -1,5 +1,7 @@
 # Wavelog QSL Mailer
 
+[![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/sp4bl)
+
 Send QSL cards by e-mail from your self-hosted [Wavelog](https://github.com/wavelog/wavelog).
 
 For every new QSO in your log it:
@@ -199,6 +201,7 @@ fine with any normal mail provider.
 - **Show your card:** [Discussions → Show and tell](https://github.com/Gerlowski/wavelog-qsl-mailer/discussions/categories/show-and-tell)
 - **Something broken:** [open an issue](https://github.com/Gerlowski/wavelog-qsl-mailer/issues) with the log
   output (`--dry-run` is fine) and your Wavelog version; leave out passwords.
+- **Like it?** [Buy me a coffee](https://buymeacoffee.com/sp4bl). 73 de SP4BL!
 
 ## Development
 
