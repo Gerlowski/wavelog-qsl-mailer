@@ -162,7 +162,7 @@ def wavelog(tmp_path, smtp, api, monkeypatch):
         f"\t'username' => '{os.environ.get('MYSQL_USER', 'root')}',\n"
         f"\t'password' => '{os.environ.get('MYSQL_PASSWORD', '')}',\n\t'database' => 'qslmailer_test',\n);\n")
     (tmp_path / 'config.ini').write_text(
-        f"[wavelog]\nconfig_dir = {cfgdir}\napi_url = {api}\napi_key = {API_KEY}\n[qso]\nstation_ids = 1,2\nsince = 2026-01-01\n"
+        f"[wavelog]\nconfig_dir = {cfgdir}\napi_url = {api}\napi_key = {API_KEY}\n[qso]\nstation_ids = 1,2\nsince = 2026-01-01\nmark_qsl_sent = true\n"
         "[mail]\ndelay_seconds = 0\n")
 
     class FakeQRZ:

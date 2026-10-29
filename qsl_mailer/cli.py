@@ -62,7 +62,7 @@ def fill(cfg, files, wl, state, dry_run):
 def send(cfg, wl, state, dry_run, preview_dir, resend=None):
     skip_calls = {c.upper() for c in conf.csv_list(conf.get(cfg, 'qso', 'skip_calls'))}
     skip_emails = {e.lower() for e in conf.csv_list(conf.get(cfg, 'qso', 'skip_emails'))}
-    mark = conf.get_bool(cfg, 'qso', 'mark_qsl_sent', True)
+    mark = conf.get_bool(cfg, 'qso', 'mark_qsl_sent', False)
     limit = int(conf.get(cfg, 'mail', 'max_per_run', 20))
     delay = float(conf.get(cfg, 'mail', 'delay_seconds', 5))
 

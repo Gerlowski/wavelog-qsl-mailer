@@ -10,7 +10,8 @@ For every new QSO in your log it:
    already in your Wavelog) and stores it in the QSO, like Wavelog's *Update from Callbook* does;
 2. **sends a QSL card**: a nicely formatted HTML mail with a personalised card image showing
    the callsign, date, UTC, band, mode, RST and frequency;
-3. **marks the QSO** in Wavelog as *QSL sent: Yes, via Electronic*.
+3. **remembers** which QSOs got a card, so nobody gets the same card twice. Optionally it also marks
+   the QSO in Wavelog as *QSL sent: Yes, via Electronic* (`mark_qsl_sent`, off by default).
 
 It runs next to Wavelog (a sidecar container or a small service) and never touches Wavelog's files,
 so Wavelog updates do not affect it.
@@ -190,8 +191,8 @@ In Docker, prefix with `docker exec wavelog-qsl-mailer`.
 
 ## Seeing what was sent
 
-- **Wavelog:** *Logbook → Advanced Logbook*, filter *QSL sent = Yes* and *QSL send method = Electronic*.
-  The QSO details show the date it was sent and the address it went to.
+- **Wavelog** (with `mark_qsl_sent = true`): *Logbook → Advanced Logbook*, filter *QSL sent = Yes* and
+  *QSL send method = Electronic*. The QSO details show the date it was sent and the address it went to.
 - **Your mailbox:** the *Sent* folder (when sending through Gmail, Outlook, …).
 - **The log** of the container or service.
 
@@ -204,15 +205,17 @@ Wavelog's `config.php`.
 Wavelog's API cannot change the e-mail or QSL sent fields of a QSO and does not offer the e-mail
 settings, so for these the mailer still uses the database (login from `database.php`):
 - it writes the contact's e-mail (`COL_EMAIL`), and only when it is empty;
-- it writes the *QSL sent* fields after a card was mailed (`mark_qsl_sent = false` turns this off);
+- only with `mark_qsl_sent = true`: it writes the *QSL sent* fields after a card was mailed. This is
+  off by default, because these fields are meant for paper QSLs;
 - it reads the SMTP settings (`options` table) and your first name (`users` table).
 
-Which QSOs already got a card is kept in its own `state.sqlite`, so even with `mark_qsl_sent = false`
-nobody gets the same card twice. A QSO is recognised by Station Location, callsign, date/time and
+Which QSOs already got a card is kept in its own `state.sqlite`, so nobody gets the same card twice
+and Wavelog's QSL fields are not needed. A QSO is recognised by Station Location, callsign, date/time and
 band, because the API does not return Wavelog's QSO ID.
 
 **Updating from 1.1:** add `api_key` (and in Docker `api_url`) to `[wavelog]` in `config.ini`.
-The record of sent cards is carried over on the first run.
+The record of sent cards is carried over on the first run. Marking QSOs as *QSL sent* is now off
+by default; a `config.ini` from 1.1 has `mark_qsl_sent = true`, set it to `false` if you send paper QSLs.
 
 ## FAQ
 
