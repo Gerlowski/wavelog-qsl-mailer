@@ -34,6 +34,25 @@ so Wavelog updates do not affect it.
   - every QSO gets its card only once.
 - **Dry run** shows who would get which card, with previews of the cards and the mail, without sending anything.
 
+## Screenshots
+
+### Mails
+
+| Two QSOs, one mail (English) | One QSO (Polish) | Theme `ocean` (German) |
+|---|---|---|
+| ![Mail with two QSOs](docs/mail.jpg) | ![Mail in Polish](docs/mail-pl.jpg) | ![Mail with the ocean theme](docs/mail-ocean.jpg) |
+
+The header and the card follow the `theme` set in `[card]`. The mail is plain HTML with tables and
+inline styles, so it looks the same in Gmail, Outlook, Apple Mail and Thunderbird. The cards are
+embedded as JPG files, and a plain-text version goes along for clients without HTML
+(`html = false` sends only the plain text with the cards attached).
+
+### Card themes
+
+| `dusk` | `ocean` | `forest` |
+|---|---|---|
+| ![dusk](docs/card-dusk.jpg) | ![ocean](docs/card-ocean.jpg) | ![forest](docs/card-forest.jpg) |
+
 ## Requirements
 
 - Wavelog (Docker or a regular Linux / Raspberry Pi install)
